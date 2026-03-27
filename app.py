@@ -19,7 +19,7 @@ except Exception:
 
 SHORTIO_API_URL = "https://api.short.io/links"
 
-# 文案模板 (支持 EN/JP 自动切换)
+# 邮件/站内信文案模板 (Subject + Body)
 CONTENT_TEMPLATES = {
     "Option 1: New Registration": {
         "EN": {
@@ -44,7 +44,7 @@ CONTENT_TEMPLATES = {
 }
 
 # ============================================================================
-# UI: UNICORN GUNDAM THEME (White + Orange/Green)
+# UI: UNICORN GUNDAM THEME
 # ============================================================================
 def inject_ui():
     st.markdown("""
@@ -55,7 +55,6 @@ def inject_ui():
     .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(25px); border-radius: 30px; padding: 2.5rem; border: 2px solid; border-image: linear-gradient(135deg, #f97316, #22c55e) 1; box-shadow: 0 25px 50px rgba(0,0,0,0.08); margin-top: 1.5rem; }
     .stButton>button { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important; color: white !important; height: 3.8rem !important; font-weight: 700 !important; border-radius: 18px !important; border: none !important; box-shadow: 0 10px 20px rgba(34, 197, 94, 0.3) !important; width: 100%; transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     .stButton>button:hover { transform: translateY(-4px) scale(1.02); box-shadow: 0 20px 35px rgba(34, 197, 94, 0.4) !important; }
-    .stTextInput>div>div>input { border-radius: 12px !important; border: 1px solid #e2e8f0 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -89,11 +88,9 @@ def main():
         st.markdown('</div>', unsafe_allow_html=True)
         return
 
-    # 主操作面板
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     with c1:
-        # 这里把 placeholder 变成了真正的默认值 value="max_bkio"
         m_id = st.text_input("Telegram ID", value="max_bkio")
         m_name = st.text_input("Manager Name", value="Max")
     with c2:
@@ -102,21 +99,20 @@ def main():
 
     if st.button("🚀 EXECUTE GENERATION"):
         if not file:
-            st.warning("Please upload a file before executing.")
+            st.warning("Please upload a file.")
             return
 
-        # 数据读取
         df = pd.read_excel(file) if file.name.endswith('xlsx') else pd.read_csv(file)
         user_col = next((c for c in df.columns if 'username' in c.lower()), None)
         country_col = next((c for c in df.columns if 'country' in c.lower()), None)
 
         if not user_col:
-            st.error("Column 'username' missing in the uploaded file.")
+            st.error("Column 'username' missing.")
             return
 
         results = []
         rows = df.to_dict('records')
-        progress_bar = st.progress(0)
+        bar = st.progress(0)
         
         for idx, row in enumerate(rows):
             user = str(row.get(user_col, "")).strip()
@@ -126,12 +122,17 @@ def main():
             country = str(row.get(country_col, "")).upper() if country_col else "GLOBAL"
             lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
             
-            # 1. 链接生成 (带安全编码，防止 Image 2 的错误)
-            tg_msg = f"Hi {m_name}, I am {user}. Help me with my VIP status."
+            # ---【客人发给你的 text 适配双语】---
+            if lang == "JP":
+                tg_msg = f"こんにちは {m_name}、{user} です。VIP特典について詳しく教えてください。"
+            else:
+                tg_msg = f"Hi {m_name}, I am {user}. I'm interested in the VIP Onboarding perks. Please guide me."
+            
+            # 链接生成
             long_url = f"https://t.me/{m_id}?text={urllib.parse.quote(tg_msg)}"
             short_link, err = shorten_url(long_url)
             
-            # 2. 文案生成
+            # 完整文案生成
             template = CONTENT_TEMPLATES[scenario][lang]
             final_subject = template["subject"].format(username=user)
             final_body = template["body"].format(username=user, m_name=m_name, short_link=short_link or "LINK_ERR")
@@ -143,13 +144,12 @@ def main():
                 "Subject": final_subject,
                 "Full Content": final_body
             })
-            progress_bar.progress((idx + 1) / len(rows))
+            bar.progress((idx + 1) / len(rows))
 
         res_df = pd.DataFrame(results)
         st.success("Generation Complete!")
         st.dataframe(res_df)
 
-        # 下载区
         st.markdown("---")
         d1, d2 = st.columns(2)
         ex_io = io.BytesIO()
@@ -161,7 +161,7 @@ def main():
         d2.download_button("📄 Export CSV (.csv)", csv_data, "vip_export.csv")
 
     st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:#cbd5e1; margin-top:2rem;'>RX-0 PSYCHO-FRAME SYSTEM v3.0</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center; color:#cbd5e1; margin-top:2rem;'>RX-0 PSYCHO-FRAME SYSTEM v3.1</p>", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
