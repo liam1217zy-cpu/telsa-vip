@@ -14,168 +14,137 @@ try:
     SHORTIO_API_KEY = st.secrets["SHORTIO_API_KEY"]
     SHORTIO_DOMAIN = st.secrets["SHORTIO_DOMAIN"]
 except Exception:
-    st.error("Missing Secrets! Please configure ACCESS_PASSWORD, SHORTIO_API_KEY, and SHORTIO_DOMAIN.")
+    st.error("Missing Secrets!")
     st.stop()
 
 SHORTIO_API_URL = "https://api.short.io/links"
 
-# 批量生成的文案模板
-CONTENT_TEMPLATES = {
+# 第一个功能的固定模板
+FIXED_TEMPLATES = {
     "Option 1: New Registration": {
-        "EN": {
-            "subject": "💎 {username}, You’ve been handpicked for VIP Onboarding.",
-            "body": "Hi {username}, don't leave your rewards to chance. We’ve handpicked {m_name}, our VIP Guide, to help you navigate your account privileges and ensure you don't miss a single perk.\n\nConnect with {m_name} here: 👉 {short_link}\n\n{m_name} will personally walk you through how to fully utilize your new account status."
-        },
-        "JP": {
-            "subject": "💎 {username}様、VIPオンボーディングの担当に選出されました。",
-            "body": "{username}様、特典を逃さないでください。専属ガイドの{m_name}が、アカウントの特権を最大限に活用できるようサポートいたします。\n\nこちらから{m_name}に連絡してください：👉 {short_link}\n\n{m_name}が、新しいアカウントステータスの活用方法を個別にご案内いたします。"
-        }
+        "EN": "Hi {m_name}, I am {user}. Help me with my VIP status.",
+        "JP": "こんにちは {m_name}、{user} です。VIP特典について詳しく教えてください。"
     },
     "Option 2: Retention": {
-        "EN": {
-            "subject": "💎 Welcome back {username}! Your VIP status is waiting.",
-            "body": "Hi {username}, we missed you! {m_name} is ready to sync your account privileges and provide the latest standby links.\n\nReconnect with {m_name} here: 👉 {short_link}\n\n{m_name} will ensure your account is fully optimized for your return."
-        },
-        "JP": {
-            "subject": "💎 {username}様、お帰りなさい！VIPステータスが待機中です。",
-            "body": "{username}様、お久しぶりです！{m_name}がアカウント特典の同期と最新の予備リンクをご案内いたします。\n\nこちらから{m_name}に再接続してください：👉 {short_link}\n\n{m_name}が、お客様の復帰に合わせてアカウントを最適化いたします。"
-        }
+        "EN": "Hi {m_name}, I am {user}. I'm back! Please sync my VIP perks.",
+        "JP": "{m_name}さん、お久しぶりです。{user}です。VIP特典を同期してください。"
     }
 }
 
 # ============================================================================
-# UI: UNICORN GUNDAM THEME
+# UI & LOGIC
 # ============================================================================
 def inject_ui():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&display=swap');
-    .stApp { background: radial-gradient(circle at 50% 100%, #f8fafc 0%, #ffffff 100%) !important; font-family: 'Plus Jakarta Sans', sans-serif !important; }
-    .main-title { font-size: 3.5rem; font-weight: 800; background: linear-gradient(135deg, #f97316 0%, #22c55e 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; margin-bottom: 0px; filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.2)); }
-    .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(25px); border-radius: 30px; padding: 2.5rem; border: 2px solid; border-image: linear-gradient(135deg, #f97316, #22c55e) 1; box-shadow: 0 25px 50px rgba(0,0,0,0.08); margin-top: 1.5rem; }
-    .stButton>button { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important; color: white !important; height: 3.5rem !important; font-weight: 700 !important; border-radius: 18px !important; border: none !important; box-shadow: 0 10px 20px rgba(34, 197, 94, 0.3) !important; width: 100%; transition: 0.4s; }
-    .stButton>button:hover { transform: translateY(-3px); box-shadow: 0 15px 30px rgba(34, 197, 94, 0.4) !important; }
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea { border-radius: 12px !important; border: 1px solid #e2e8f0 !important; }
-    h3 { color: #1e293b; font-weight: 800; margin-bottom: 1rem; }
+    .stApp { background: radial-gradient(circle at 50% 100%, #f8fafc 0%, #ffffff 100%) !important; }
+    .main-title { font-size: 3rem; font-weight: 800; background: linear-gradient(135deg, #f97316 0%, #22c55e 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
+    .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); border-radius: 25px; padding: 2rem; border: 2px solid; border-image: linear-gradient(135deg, #f97316, #22c55e) 1; box-shadow: 0 15px 35px rgba(0,0,0,0.05); margin-bottom: 2rem; }
+    .stButton>button { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important; color: white !important; border-radius: 12px !important; width: 100%; height: 3rem; font-weight: 700; border: none; }
     </style>
     """, unsafe_allow_html=True)
 
-def shorten_url(long_url: str) -> Tuple[Optional[str], Optional[str]]:
+def shorten_url(long_url: str) -> str:
     headers = {"Authorization": SHORTIO_API_KEY, "Content-Type": "application/json"}
     payload = {"domain": SHORTIO_DOMAIN, "originalURL": long_url}
     try:
-        response = requests.post(SHORTIO_API_URL, headers=headers, json=payload, timeout=15)
-        if response.status_code in [200, 201]: return response.json().get("shortURL"), None
-        return None, f"Error {response.status_code}"
-    except Exception as e: return None, str(e)
+        res = requests.post(SHORTIO_API_URL, headers=headers, json=payload, timeout=10)
+        return res.json().get("shortURL", "Error")
+    except: return "Error"
 
-# ============================================================================
-# MAIN
-# ============================================================================
 def main():
     st.set_page_config(page_title="RX-0 VIP PRO", layout="centered")
     inject_ui()
     
     if 'auth' not in st.session_state: st.session_state.auth = False
-    st.markdown('<h1 class="main-title">VIP RX-0 [TERMINAL]</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">VIP RX-0 [DUAL-CORE]</h1>', unsafe_allow_html=True)
 
     if not st.session_state.auth:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        pwd = st.text_input("Unlock Psycho-Frame System", type="password")
-        if st.button("SYSTEM ACTIVATION"):
-            if pwd == ACCESS_PASSWORD:
-                st.session_state.auth = True
-                st.rerun()
-            else: st.error("Access Denied.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        pwd = st.text_input("System Key", type="password")
+        if st.button("ACTIVATE"):
+            if pwd == ACCESS_PASSWORD: st.session_state.auth = True; st.rerun()
         return
 
-    # --- 功能 1: 批量生成 (原有的逻辑保留) ---
+    # ------------------------------------------------------------------------
+    # 功能 1: 批量自动模板 (Fixed Template)
+    # ------------------------------------------------------------------------
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown("### 🚀 Batch Link Generation")
-    c1, c2 = st.columns(2)
-    with c1:
-        m_id = st.text_input("Telegram ID", value="max_bkio", key="batch_tid")
-        m_name = st.text_input("Manager Name", value="Max", key="batch_mname")
-    with c2:
-        scenario = st.selectbox("Strategic Scenario", list(CONTENT_TEMPLATES.keys()))
-        file = st.file_uploader("Upload Target Data (XLSX/CSV)", type=['csv', 'xlsx'])
+    st.subheader("🚀 Mode A: Batch Auto-Template")
+    st.caption("使用预设的固定文案（New Reg / Retention）生成链接。")
+    
+    a_col1, a_col2 = st.columns(2)
+    with a_col1:
+        a_mid = st.text_input("TG ID", value="max_bkio", key="a_mid")
+        a_mname = st.text_input("Manager Name", value="Max", key="a_mname")
+    with a_col2:
+        a_scen = st.selectbox("Scenario", list(FIXED_TEMPLATES.keys()), key="a_scen")
+        a_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'], key="a_file")
 
-    if st.button("🚀 EXECUTE BATCH GENERATION"):
-        if not file:
-            st.warning("Please upload a file.")
-        else:
-            df = pd.read_excel(file) if file.name.endswith('xlsx') else pd.read_csv(file)
+    if st.button("EXECUTE MODE A"):
+        if a_file:
+            df = pd.read_excel(a_file) if a_file.name.endswith('xlsx') else pd.read_csv(a_file)
             user_col = next((c for c in df.columns if 'username' in c.lower()), None)
             country_col = next((c for c in df.columns if 'country' in c.lower()), None)
             
-            if not user_col:
-                st.error("Column 'username' missing.")
-            else:
-                results = []
-                bar = st.progress(0)
-                rows = df.to_dict('records')
-                for idx, row in enumerate(rows):
-                    user = str(row.get(user_col, "")).strip()
-                    if not user or user.lower() == 'nan': continue
-                    country = str(row.get(country_col, "")).upper() if country_col else "GLOBAL"
-                    lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
-                    
-                    tg_msg = f"Hi {m_name}, I am {user}." if lang == "EN" else f"こんにちは {m_name}、{user} です。"
-                    long_url = f"https://t.me/{m_id}?text={urllib.parse.quote(tg_msg)}"
-                    short_link, _ = shorten_url(long_url)
-                    
-                    template = CONTENT_TEMPLATES[scenario][lang]
-                    results.append({
-                        "Username": user,
-                        "Short Link": short_link or "Error",
-                        "Subject": template["subject"].format(username=user),
-                        "Full Content": template["body"].format(username=user, m_name=m_name, short_link=short_link or "ERR")
-                    })
-                    bar.progress((idx + 1) / len(rows))
+            results = []
+            for _, row in df.iterrows():
+                user = str(row.get(user_col, "")).strip()
+                if not user or user.lower() == 'nan': continue
+                country = str(row.get(country_col, "")).upper() if country_col else "EN"
+                lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
                 
-                res_df = pd.DataFrame(results)
-                st.success("Batch Complete!")
-                st.dataframe(res_df)
-                
-                # 下载按钮
-                ex_io = io.BytesIO()
-                with pd.ExcelWriter(ex_io, engine='openpyxl') as writer:
-                    res_df.to_excel(writer, index=False)
-                st.download_button("📂 Download Results (.xlsx)", ex_io.getvalue(), "vip_export.xlsx")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # --- 功能 2: 手动输入 (新增的功能) ---
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown("### ✍️ Single Manual Generator")
-    st.caption("No Short.io required. Generate content for a single user instantly.")
-    
-    mc1, mc2 = st.columns(2)
-    with mc1:
-        manual_user = st.text_input("Customer Name", placeholder="e.g. Liam777", key="man_user")
-        manual_manager = st.text_input("Manager Name", value="Max", key="man_mname")
-    with mc2:
-        manual_lang = st.radio("Language Mode", ["English 🌍", "Japanese 🇯🇵"], horizontal=True)
-    
-    manual_content = st.text_area("Content Body", 
-                                  placeholder="Type your message here. Use {username} to auto-insert the customer's name.",
-                                  height=150)
-
-    if st.button("✨ GENERATE MANUAL TEXT"):
-        if not manual_user or not manual_content:
-            st.warning("Please enter both Customer Name and Content.")
-        else:
-            # 简单的变量替换逻辑
-            final_text = manual_content.replace("{username}", manual_user).replace("{m_name}", manual_manager)
+                # 调用固定模板
+                raw_msg = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
+                long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(raw_msg)}"
+                short_link = shorten_url(long_url)
+                results.append({"Username": user, "Country": country, "Short Link": short_link})
             
-            st.markdown("#### ✅ Generated Output:")
-            st.code(final_text, language="text")
-            st.info("You can now copy the text above directly.")
-
+            st.dataframe(pd.DataFrame(results))
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("<p style='text-align:center; color:#cbd5e1; margin-top:2rem;'>RX-0 PSYCHO-FRAME SYSTEM v4.0</p>", unsafe_allow_html=True)
+    # ------------------------------------------------------------------------
+    # 功能 2: 批量自定义内容 (Custom Content)
+    # ------------------------------------------------------------------------
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("✍️ Mode B: Batch Custom Content")
+    st.caption("自定义客人点击链接后会说的话。必须包含 {username}。")
+    
+    b_col1, b_col2 = st.columns(2)
+    with b_col1:
+        b_mid = st.text_input("TG ID", value="max_bkio", key="b_mid")
+        b_mname = st.text_input("Manager Name", value="Max", key="b_mname")
+    with b_col2:
+        b_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'], key="b_file")
+
+    # 自定义文案输入区
+    st.markdown("**Define what the CUSTOMER will say:**")
+    custom_en = st.text_area("English Message (Global)", value="Hi {m_name}, my name is {username}. I am interested in...")
+    custom_jp = st.text_area("Japanese Message (Japan)", value="こんにちは {m_name}、{username} です。興味があります...")
+
+    if st.button("EXECUTE MODE B"):
+        if b_file:
+            df = pd.read_excel(b_file) if b_file.name.endswith('xlsx') else pd.read_csv(b_file)
+            user_col = next((c for c in df.columns if 'username' in c.lower()), None)
+            country_col = next((c for c in df.columns if 'country' in c.lower()), None)
+            
+            results_b = []
+            for _, row in df.iterrows():
+                user = str(row.get(user_col, "")).strip()
+                if not user or user.lower() == 'nan': continue
+                country = str(row.get(country_col, "")).upper() if country_col else "EN"
+                lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
+                
+                # 使用你在网页上输入的自定义内容
+                raw_text = custom_jp if lang == "JP" else custom_en
+                final_msg = raw_text.replace("{username}", user).replace("{m_name}", b_mname)
+                
+                long_url = f"https://t.me/{b_mid}?text={urllib.parse.quote(final_msg)}"
+                short_link = shorten_url(long_url)
+                results_b.append({"Username": user, "Country": country, "Short Link": short_link})
+            
+            st.success("Custom Batch Done!")
+            st.dataframe(pd.DataFrame(results_b))
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
