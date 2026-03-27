@@ -1,206 +1,172 @@
 import streamlit as st
 import pandas as pd
-import requests
 import urllib.parse
+import requests
 import io
-import time
-from typing import Optional, Dict, List, Tuple
+import os
+from datetime import datetime
 
 # ============================================================================
-# CONFIGURATION (Read from Streamlit Secrets)
+# 1. 安全配置与模板定义
 # ============================================================================
-try:
-    ACCESS_PASSWORD = st.secrets["ACCESS_PASSWORD"]
-    SHORTIO_API_KEY = st.secrets["SHORTIO_API_KEY"]
-    SHORTIO_DOMAIN = st.secrets["SHORTIO_DOMAIN"]
-except Exception:
-    st.error("Missing Secrets! Please configure ACCESS_PASSWORD, SHORTIO_API_KEY, and SHORTIO_DOMAIN in Streamlit Settings.")
-    st.stop()
+ACCESS_PASSWORD = "BK8VIP2026"
 
-SHORTIO_API_URL = "https://api.short.io/links"
-DEFAULT_MANAGER_ID = "max_bkio"
-DEFAULT_MANAGER_NAME = "Max"
+# 从 Secrets 获取敏感信息
+SHORTIO_API_KEY = st.secrets.get("SHORTIO_API_KEY")
+SHORTIO_DOMAIN = st.secrets.get("SHORTIO_DOMAIN", "vincent17.short.gy")
 
-# 内部逻辑模板（界面不显示选择，后台自动匹配）
-TEMPLATES = {
-    "Option 1: New Registration": {
-        "EN": "Hello {manager_name}, I am {username}. I've opened an account. Please help confirm if my account has VIP priority access enabled and the most stable deposit method currently.",
-        "JP": "こんにちは {manager_name}、{username} です。口座を開設しました。私のカウントが VIP 優先アクセスに対応しているかと、現在最も安定した入金方法を確認してください。"
-    },
-    "Option 2: Retention": {
-        "EN": "Hello {manager_name}, I am {username}. I haven't been online for a while. Please help check if my account status is normal and provide the latest alternative URLs.",
-        "JP": "こんにちは {manager_name}、{username} です。久しぶりにログインしました。アカウントの状態が正常かどうかを確認し、最新の予備 URL を教えてください。"
+# --- 英文模板 ---
+TEMPLATE_EN_LVL1 = "Subject: 💎 {username}, You’ve been handpicked for VIP Onboarding.\n\nHi {username}, don't leave your rewards to chance. We’ve handpicked Max, our VIP Guide, to help you navigate your account privileges and ensure you don't miss a single perk.\n\nConnect with Max here: 👉 {short_link}\n\nMax will personally walk you through how to fully utilize your new account status."
+TEMPLATE_EN_HIGH = "Subject: 🏆 {username}, Your Private VIP Consultant is ready.\n\nDear {username}, a high-tier player needs a high-tier consultant. We have handpicked Max to be your direct point of contact for all strategic account moves.\n\nMessage Max for 1-on-1 guidance: 👉 {short_link}\n\nMax’s role is to ensure your loyalty is reflected in your rewards. Get expert guidance starting now."
+
+# --- 日文模板 ---
+TEMPLATE_JP_LVL1 = "Subject: 💎 {username}様、VIPオンボーディングの担当者に选出されました。\n\n{username}様、特典を逃す手はありません。アカウントの优待を最大限に活用し、すべての特典を确実にお受け取りいただくため、VIPガイドのMaxが贵方をサポートいたします。\n\nMaxへの联络はこちらから： 👉 {short_link}\n\nMaxが、新しいアカウントステータスの活用方法を个别にご案内いたします。"
+TEMPLATE_JP_HIGH = "Subject: 🏆 {username}様、専属VIPコンサルタントのご准备が整いました。\n\n{username}様、ハイティアプレイヤーには、それに相応しいコンサルタントが必要です。戦略的なアカウント运用を直接サポートするため、専属担当としてMaxを選出いたしました。\n\n1対1の个别ガイダンスはこちら： 👉 {short_link}\n\nMaxの役割は、お客様のロイヤリティを确実に報酬へと反映させることです。今すぐ専门的なサポートをご利用ください。"
+
+# ============================================================================
+# 2. 核心逻辑函数
+# ============================================================================
+
+def clean_id(raw_id):
+    """自动清洗 Telegram ID，只保留用户名部分"""
+    if not raw_id: return ""
+    text = raw_id.strip().replace("@", "")
+    if "t.me/" in text:
+        text = text.split("t.me/")[-1].split("?")[0]
+    return text
+
+def get_short_url(long_url):
+    """调用 Short.io API"""
+    if not SHORTIO_API_KEY: return long_url
+    url = "https://api.short.io/links"
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": SHORTIO_API_KEY
     }
-}
+    payload = {"originalURL": long_url, "domain": SHORTIO_DOMAIN}
+    try:
+        res = requests.post(url, json=payload, headers=headers, timeout=10)
+        if res.status_code in [200, 201]:
+            return res.json().get('shortURL')
+    except:
+        pass
+    return long_url
+
+def process_row(row, manager_id):
+    """处理每一行数据，生成短链和文案"""
+    # 模糊匹配列名
+    cols = {str(c).lower().strip(): c for c in row.index}
+    def find_col(key):
+        for k in cols:
+            if key in k: return cols[k]
+        return None
+
+    user_key = find_col("user") or row.index[0]
+    country_key = find_col("country")
+    vip_key = find_col("vip")
+
+    username = str(row[user_key]).strip()
+    country = str(row.get(country_key, "other")).strip().lower()
+    vip_level = str(row.get(vip_key, "Level 1")).strip()
+
+    # 1. 构造 Telegram 链接 (客户点开后自动发出的消息)
+    msg = f"Hi Max I need your assistance, my username is {username}"
+    encoded_msg = urllib.parse.quote(msg)
+    long_link = f"https://t.me/{manager_id}?text={encoded_msg}"
+    
+    # 2. 缩短
+    short_link = get_short_url(long_link)
+    
+    # 3. 匹配文案模板
+    is_lvl1 = "level 1" in vip_level.lower()
+    if "japan" in country:
+        template = TEMPLATE_JP_LVL1 if is_lvl1 else TEMPLATE_JP_HIGH
+    else:
+        template = TEMPLATE_EN_LVL1 if is_lvl1 else TEMPLATE_EN_HIGH
+        
+    content = template.format(username=username, short_link=short_link)
+    return short_link, content
 
 # ============================================================================
-# PREMIUM UI DESIGN (Glassmorphism)
+# 3. Streamlit UI 界面
 # ============================================================================
-def inject_ui():
+
+def main():
+    st.set_page_config(page_title="VIP Manager Tool", page_icon="💎", layout="wide")
+    
+    # 注入 CSS 视觉样式
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-    
-    .stApp {
-        background: radial-gradient(circle at top right, #1e293b, #0f172a) !important;
-        font-family: 'Inter', sans-serif !important;
-    }
-    
-    .main-title {
-        font-size: 3rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #4edea3 0%, #06b6d4 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 0.5rem;
-    }
-    
-    .glass-card {
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 2rem;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        margin-top: 2rem;
-    }
-    
-    .stButton>button {
-        background: linear-gradient(135deg, #4edea3 0%, #3bc48a 100%) !important;
-        color: #0f172a !important;
-        border: none !important;
-        padding: 0.75rem 2rem !important;
-        font-weight: 700 !important;
-        border-radius: 12px !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 10px 15px -3px rgba(78, 222, 163, 0.3) !important;
-        width: 100%;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 20px 25px -5px rgba(78, 222, 163, 0.4) !important;
-    }
+    .main { background-color: #0e1117; }
+    .stButton>button { background: linear-gradient(90deg, #4edea3, #3bc48a); color: black; font-weight: bold; border-radius: 10px; border: none; }
+    .glass-card { background: rgba(255, 255, 255, 0.03); padding: 25px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-def shorten_url(long_url: str) -> Tuple[Optional[str], Optional[str]]:
-    headers = {"Authorization": SHORTIO_API_KEY, "Content-Type": "application/json"}
-    payload = {"domain": SHORTIO_DOMAIN, "originalURL": long_url}
-    try:
-        response = requests.post(SHORTIO_API_URL, headers=headers, json=payload, timeout=15)
-        if response.status_code in [200, 201]:
-            return response.json().get("shortURL"), None
-        return None, f"Error {response.status_code}"
-    except Exception as e:
-        return None, str(e)
-
-# ============================================================================
-# MAIN APPLICATION
-# ============================================================================
-def main():
-    st.set_page_config(page_title="VIP Link Pro", page_icon="⚡", layout="centered")
-    inject_ui()
-    
-    if 'auth' not in st.session_state: st.session_state.auth = False
-
-    st.markdown('<h1 class="main-title">VIP Link Pro</h1>', unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center; color:#94a3b8;'>Premium Bulk Telegram Deep-Link Solution</p>", unsafe_allow_html=True)
-
-    # 1. Login Logic
-    if not st.session_state.auth:
-        with st.container():
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            pwd = st.text_input("System Vault Key", type="password")
-            if st.button("Unlock Dashboard"):
-                if pwd == ACCESS_PASSWORD:
-                    st.session_state.auth = True
-                    st.rerun()
-                else: st.error("Access Key Invalid")
-            st.markdown('</div>', unsafe_allow_html=True)
+    # 登录逻辑
+    if 'authenticated' not in st.session_state: st.session_state.authenticated = False
+    if not st.session_state.authenticated:
+        st.title("🔐 System Access")
+        pwd = st.text_input("Enter Vault Key", type="password")
+        if st.button("Access System"):
+            if pwd == ACCESS_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            else: st.error("Access Denied.")
         return
 
-    # 2. Tool Logic
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    # 主界面
+    st.title("💎 VIP Link & Content Generator")
     
-    c1, c2 = st.columns(2)
-    with c1:
-        m_id = st.text_input("Manager Telegram ID", value=DEFAULT_MANAGER_ID)
-        m_name = st.text_input("Display Name", value=DEFAULT_MANAGER_NAME)
-    with c2:
-        scenario = st.selectbox("Select Scenario", ["Option 1: New Registration", "Option 2: Retention"])
-        file = st.file_uploader("Upload CSV or XLSX", type=['csv', 'xlsx'])
+    with st.container():
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            raw_manager_id = st.text_input("Manager Telegram ID", value="max_bkio", help="系统会自动清洗网址前缀")
+            manager_id = clean_id(raw_manager_id)
+            if manager_id: st.caption(f"✅ 链接将导向: t.me/{manager_id}")
+        with c2:
+            st.markdown("**功能状态检查：**")
+            if SHORTIO_API_KEY: st.success("🟢 Short.io API 已连接")
+            else: st.warning("🟡 未检测到 API Key，将生成原始长链接")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    if file and st.button("🚀 Process & Generate Links"):
-        # Load Data
+    # 文件上传
+    file = st.file_uploader("上传客户名单 (Excel 或 CSV)", type=["xlsx", "csv"])
+    
+    if file:
         df = pd.read_excel(file) if file.name.endswith('xlsx') else pd.read_csv(file)
-        
-        # Identify columns
-        user_col = next((c for c in df.columns if 'username' in c.lower()), None)
-        country_col = next((c for c in df.columns if 'country' in c.lower()), None)
-        
-        if not user_col:
-            st.error("Error: Could not find 'username' column in your file.")
-        else:
+        st.write("📊 数据预览 (前 3 行):")
+        st.dataframe(df.head(3), use_container_width=True)
+
+        if st.button("🚀 开始批量生成文案和短链接"):
             results = []
-            progress = st.progress(0)
-            status_text = st.empty()
+            bar = st.progress(0)
+            status = st.empty()
             
-            rows = df.to_dict('records')
-            total = len(rows)
-
-            for idx, row in enumerate(rows):
-                user = str(row.get(user_col, "")).strip()
-                if not user or user.lower() == 'nan': continue
+            for i, (idx, row) in enumerate(df.iterrows()):
+                status.text(f"正在处理: {i+1}/{len(df)}")
+                short_url, content = process_row(row, manager_id)
                 
-                # 自动判断语言逻辑
-                country = str(row.get(country_col, "")).upper() if country_col else "OTHER"
-                lang_code = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
-                
-                # 获取模板并生成链接
-                msg_template = TEMPLATES[scenario][lang_code]
-                full_msg = msg_template.format(manager_name=m_name, username=user)
-                
-                encoded_msg = urllib.parse.quote(full_msg)
-                long_url = f"https://t.me/{m_id}?text={encoded_msg}"
-                
-                short_url, err = shorten_url(long_url)
-                
-                results.append({
-                    "Username": user,
-                    "Country": country,
-                    "Language": lang_code,
-                    "Short Link": short_url if short_url else "Error",
-                    "Status": "Success" if short_url else err
-                })
-                
-                progress.progress((idx + 1) / total)
-                status_text.text(f"Processing: {idx+1}/{total}")
-                time.sleep(0.05) # Rate limit protection
-
+                new_row = row.to_dict()
+                new_row['Short_Link'] = short_url
+                new_row['Invitation_Content'] = content
+                results.append(new_row)
+                bar.progress((i + 1) / len(df))
+            
             res_df = pd.DataFrame(results)
-            st.success(f"Successfully generated {len(res_df)} links!")
-            st.dataframe(res_df, use_container_width=True)
+            st.success("✨ 处理完成！")
+            st.dataframe(res_df[['Short_Link', 'Invitation_Content']].head(), use_container_width=True)
 
-            # Download Buttons
-            st.markdown("### 📥 Download Results")
-            dc1, dc2 = st.columns(2)
-            
-            # Excel Download
-            excel_bio = io.BytesIO()
-            with pd.ExcelWriter(excel_bio, engine='openpyxl') as writer:
-                res_df.to_excel(writer, index=False)
-            dc1.download_button("Export to Excel (.xlsx)", excel_bio.getvalue(), "vip_links.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            
-            # CSV Download
-            csv_data = res_df.to_csv(index=False).encode('utf-8-sig')
-            dc2.download_button("Export to CSV (.csv)", csv_data, "vip_links.csv", "text/csv")
-
-    st.markdown('</div>', unsafe_allow_html=True)
+            # 导出按钮
+            csv = res_df.to_csv(index=False, encoding='utf-8-sig')
+            st.download_button(
+                label="💾 下载结果表格 (Excel 可用)",
+                data=csv,
+                file_name=f"VIP_Outreach_{datetime.now().strftime('%m%d')}.csv",
+                mime="text/csv"
+            )
 
 if __name__ == "__main__":
     main()
