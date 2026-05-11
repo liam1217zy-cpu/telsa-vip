@@ -14,7 +14,7 @@ try:
     SHORTIO_API_KEY = st.secrets["SHORTIO_API_KEY"]
     SHORTIO_DOMAIN = st.secrets["SHORTIO_DOMAIN"]
 except Exception:
-    st.error("Missing Secrets!")
+    st.error("Missing Secrets in Streamlit Cloud!")
     st.stop()
 
 SHORTIO_API_URL = "https://api.short.io/links"
@@ -23,7 +23,7 @@ SHORTIO_API_URL = "https://api.short.io/links"
 # 模板配置
 # ----------------------------------------------------------------------------
 
-# 1. 客户点击链接后，手机里自动准备好的话 (简单直接)
+# 1. 客户点击链接后，手机里自动准备好的话 (简单直接，不打扰客户)
 FIXED_TEMPLATES = {
     "Option 1: New Registration": {
         "EN": "Hi {m_name}, I am {user}. Help me with my VIP status.",
@@ -39,7 +39,7 @@ FIXED_TEMPLATES = {
     }
 }
 
-# 2. 你发给客户的精美宣传文案 (包含所有详细条款)
+# 2. 您发给客户的精美宣传文案 (包含所有详细条款和日期)
 OUTREACH_TEMPLATES = {
     "Option 3: Weekly Challenge": {
         "EN": (
@@ -77,8 +77,8 @@ def inject_ui():
     <style>
     .stApp { background: radial-gradient(circle at 50% 100%, #f8fafc 0%, #ffffff 100%) !important; }
     .main-title { font-size: 3rem; font-weight: 800; background: linear-gradient(135deg, #f97316 0%, #22c55e 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
-    .glass-card { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(20px); border-radius: 25px; padding: 2rem; border: 2px solid #e2e8f0; box-shadow: 0 15px 35px rgba(0,0,0,0.05); margin-bottom: 2rem; }
-    .stButton>button { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important; color: white !important; border-radius: 12px !important; width: 100%; height: 3rem; font-weight: 700; border: none; }
+    .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(20px); border-radius: 20px; padding: 2rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.05); margin-bottom: 2rem; }
+    .stButton>button { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important; color: white !important; border-radius: 10px !important; width: 100%; height: 3rem; font-weight: 700; border: none; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -88,19 +88,26 @@ def shorten_url(long_url: str) -> str:
     try:
         res = requests.post(SHORTIO_API_URL, headers=headers, json=payload, timeout=10)
         return res.json().get("shortURL", "Error")
-    except: return "Error"
+    except:
+        return "Error"
 
 def main():
     st.set_page_config(page_title="RX-0 VIP PRO", layout="wide")
     inject_ui()
     
-    if 'auth' not in st.session_state: st.session_state.auth = False
+    if 'auth' not in st.session_state:
+        st.session_state.auth = False
+    
     st.markdown('<h1 class="main-title">VIP RX-0 [DUAL-CORE]</h1>', unsafe_allow_html=True)
 
     if not st.session_state.auth:
         pwd = st.text_input("System Key", type="password")
         if st.button("ACTIVATE"):
-            if pwd == ACCESS_PASSWORD: st.session_state.auth = True; st.rerun()
+            if pwd == ACCESS_PASSWORD:
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("Invalid Key")
         return
 
     # ------------------------------------------------------------------------
@@ -121,36 +128,44 @@ def main():
     if st.button("GENERATE CAMPAIGN"):
         if a_file:
             df = pd.read_excel(a_file) if a_file.name.endswith('xlsx') else pd.read_csv(a_file)
+            # 自动识别表头 (不区分大小写)
             user_col = next((c for c in df.columns if 'username' in c.lower()), None)
             country_col = next((c for c in df.columns if 'country' in c.lower()), None)
             
-            results = []
-            for _, row in df.iterrows():
-                user = str(row.get(user_col, "")).strip()
-                if not user or user.lower() == 'nan': continue
-                country = str(row.get(country_col, "")).upper() if country_col else "EN"
-                lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
-                
-                # 1. 准备客户手机里的简单回复
-                customer_reply = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
-                long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(customer_reply)}"
-                short_link = shorten_url(long_url)
-                
-                # 2. 准备发给客户的精美文案
-                if a_scen in OUTREACH_TEMPLATES:
-                    outreach_text = OUTREACH_TEMPLATES[a_scen][lang].format(user=user, short_link=short_link)
-                else:
-                    outreach_text = f"Hi {user}, check this out: {short_link}"
+            if not user_col:
+                st.error("Excel 中找不到 'username' 列！")
+            else:
+                results = []
+                for _, row in df.iterrows():
+                    user = str(row.get(user_col, "")).strip()
+                    if not user or user.lower() == 'nan': continue
+                    
+                    # 强化的国家判断逻辑：包含 JP 或 JAPAN 就切换
+                    country_raw = str(row.get(country_col, "")).upper().strip() if country_col else "EN"
+                    lang = "JP" if ("JP" in country_raw or "JAPAN" in country_raw) else "EN"
+                    
+                    # 1. 准备客户手机里的简单回复 (用户是客户，你是 Max)
+                    customer_reply = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
+                    long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(customer_reply)}"
+                    short_link = shorten_url(long_url)
+                    
+                    # 2. 准备发给客户的精美文案
+                    if a_scen in OUTREACH_TEMPLATES:
+                        outreach_text = OUTREACH_TEMPLATES[a_scen][lang].format(user=user, short_link=short_link)
+                    else:
+                        # 默认简短文案
+                        outreach_text = f"Hi {user}, check this out: {short_link}"
 
-                results.append({
-                    "Username": user,
-                    "Country": country,
-                    "Copy this to Client": outreach_text,
-                    "Short Link": short_link
-                })
-            
-            st.success(f"Generated {len(results)} links!")
-            st.dataframe(pd.DataFrame(results), use_container_width=True)
+                    results.append({
+                        "Username": user,
+                        "Country_Raw": country_raw,
+                        "Language": lang,
+                        "Message to Copy": outreach_text,
+                        "Short Link": short_link
+                    })
+                
+                st.success(f"成功处理 {len(results)} 条数据！")
+                st.dataframe(pd.DataFrame(results), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # ------------------------------------------------------------------------
@@ -167,10 +182,10 @@ def main():
         b_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'], key="b_file")
 
     st.markdown("**What the CUSTOMER will say when clicking:**")
-    custom_en = st.text_area("English Message", value="Hi {m_name}, I'm {username}. Tell me more!")
-    custom_jp = st.text_area("Japanese Message", value="こんにちは {m_name}、{username} です。詳細希望！")
+    custom_en = st.text_area("English Message", value="Hi {m_name}, I'm {username}. I have a question!")
+    custom_jp = st.text_area("Japanese Message", value="こんにちは {m_name}、{username} です。質問があります！")
 
-    if st.button("EXECUTE MODE B"):
+    if st.button("EXECUTE CUSTOM MODE"):
         if b_file:
             df = pd.read_excel(b_file) if b_file.name.endswith('xlsx') else pd.read_csv(b_file)
             user_col = next((c for c in df.columns if 'username' in c.lower()), None)
@@ -180,8 +195,9 @@ def main():
             for _, row in df.iterrows():
                 user = str(row.get(user_col, "")).strip()
                 if not user or user.lower() == 'nan': continue
-                country = str(row.get(country_col, "")).upper() if country_col else "EN"
-                lang = "JP" if any(x in country for x in ["JAPAN", "JP"]) else "EN"
+                
+                country_raw = str(row.get(country_col, "")).upper().strip() if country_col else "EN"
+                lang = "JP" if ("JP" in country_raw or "JAPAN" in country_raw) else "EN"
                 
                 raw_text = custom_jp if lang == "JP" else custom_en
                 final_msg = raw_text.replace("{username}", user).replace("{m_name}", b_mname)
