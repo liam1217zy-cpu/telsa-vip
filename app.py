@@ -3,8 +3,7 @@ import pandas as pd
 import requests
 import urllib.parse
 import io
-import time
-from typing import Optional, Dict, List, Tuple
+from typing import Optional, Dict, List
 
 # ============================================================================
 # CONFIGURATION
@@ -20,10 +19,8 @@ except Exception:
 SHORTIO_API_URL = "https://api.short.io/links"
 
 # ----------------------------------------------------------------------------
-# 模板配置
+# 1. 客户点击链接后，手机里自动准备好的话 (简单直接)
 # ----------------------------------------------------------------------------
-
-# 1. 客户点击链接后，手机里自动准备好的话 (简单直接，不打扰客户)
 FIXED_TEMPLATES = {
     "Option 1: New Registration": {
         "EN": "Hi {m_name}, I am {user}. Help me with my VIP status.",
@@ -39,8 +36,18 @@ FIXED_TEMPLATES = {
     }
 }
 
-# 2. 您发给客户的精美宣传文案 (包含所有详细条款和日期)
+# ----------------------------------------------------------------------------
+# 2. 你发给客户的精美宣传文案 (每一项都配好，绝不删减)
+# ----------------------------------------------------------------------------
 OUTREACH_TEMPLATES = {
+    "Option 1: New Registration": {
+        "EN": "🌟 *Welcome to VIP Elite* 🌟\n\nHello {user}, your account is eligible for a VIP status upgrade! Get ready for exclusive perks and priority service.\n\n👇 *Claim your status here:* {short_link}",
+        "JP": "🌟 *VIPエリートへようこそ* 🌟\n\n{user}様、あなたのアカウントはVIPステータスへのアップグレード対象です！特別な特典と優先サービスをご用意しております。\n\n👇 *こちらから申請してください:* {short_link}"
+    },
+    "Option 2: Retention": {
+        "EN": "👋 *We Miss You, {user}!* 👋\n\nWelcome back! We've prepared a special reactivation bonus just for you. Let's get your VIP perks back on track.\n\n👇 *Sync your perks here:* {short_link}",
+        "JP": "👋 *おかえりなさい、{user}様！* 👋\n\nお久しぶりです！{user}様のために特別なリアクティベーションボーナスをご用意しました。VIP特典を今すぐ再有効化しましょう。\n\n👇 *こちらから同期:* {short_link}"
+    },
     "Option 3: Weekly Challenge": {
         "EN": (
             "🏆 *13 Apr - 20 May '26 | Weekly Exclusive Challenge*\n\n"
@@ -88,31 +95,20 @@ def shorten_url(long_url: str) -> str:
     try:
         res = requests.post(SHORTIO_API_URL, headers=headers, json=payload, timeout=10)
         return res.json().get("shortURL", "Error")
-    except:
-        return "Error"
+    except: return "Error"
 
 def main():
     st.set_page_config(page_title="RX-0 VIP PRO", layout="wide")
     inject_ui()
-    
-    if 'auth' not in st.session_state:
-        st.session_state.auth = False
-    
+    if 'auth' not in st.session_state: st.session_state.auth = False
     st.markdown('<h1 class="main-title">VIP RX-0 [DUAL-CORE]</h1>', unsafe_allow_html=True)
 
     if not st.session_state.auth:
         pwd = st.text_input("System Key", type="password")
         if st.button("ACTIVATE"):
-            if pwd == ACCESS_PASSWORD:
-                st.session_state.auth = True
-                st.rerun()
-            else:
-                st.error("Invalid Key")
+            if pwd == ACCESS_PASSWORD: st.session_state.auth = True; st.rerun()
         return
 
-    # ------------------------------------------------------------------------
-    # 功能 1: 批量自动模板 (Mode A)
-    # ------------------------------------------------------------------------
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("🚀 Mode A: Batch Outreach Generator")
     
@@ -125,88 +121,45 @@ def main():
     with a_col3:
         a_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'])
 
-    if st.button("GENERATE CAMPAIGN"):
-        if a_file:
-            df = pd.read_excel(a_file) if a_file.name.endswith('xlsx') else pd.read_csv(a_file)
-            # 自动识别表头 (不区分大小写)
-            user_col = next((c for c in df.columns if 'username' in c.lower()), None)
-            country_col = next((c for c in df.columns if 'country' in c.lower()), None)
-            
-            if not user_col:
-                st.error("Excel 中找不到 'username' 列！")
-            else:
-                results = []
-                for _, row in df.iterrows():
-                    user = str(row.get(user_col, "")).strip()
-                    if not user or user.lower() == 'nan': continue
-                    
-                    # 强化的国家判断逻辑：包含 JP 或 JAPAN 就切换
-                    country_raw = str(row.get(country_col, "")).upper().strip() if country_col else "EN"
-                    lang = "JP" if ("JP" in country_raw or "JAPAN" in country_raw) else "EN"
-                    
-                    # 1. 准备客户手机里的简单回复 (用户是客户，你是 Max)
-                    customer_reply = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
-                    long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(customer_reply)}"
-                    short_link = shorten_url(long_url)
-                    
-                    # 2. 准备发给客户的精美文案
-                    if a_scen in OUTREACH_TEMPLATES:
-                        outreach_text = OUTREACH_TEMPLATES[a_scen][lang].format(user=user, short_link=short_link)
-                    else:
-                        # 默认简短文案
-                        outreach_text = f"Hi {user}, check this out: {short_link}"
+    if a_file:
+        df = pd.read_excel(a_file) if a_file.name.endswith('xlsx') else pd.read_csv(a_file)
+        st.info("Confirm Column Mapping:")
+        c1, c2 = st.columns(2)
+        with c1: u_col = st.selectbox("Username Column", df.columns, index=0)
+        with c2:
+            def_idx = 0
+            for i, col in enumerate(df.columns):
+                if 'country' in col.lower(): def_idx = i; break
+            c_col = st.selectbox("Country Column", df.columns, index=def_idx)
 
-                    results.append({
-                        "Username": user,
-                        "Country_Raw": country_raw,
-                        "Language": lang,
-                        "Message to Copy": outreach_text,
-                        "Short Link": short_link
-                    })
-                
-                st.success(f"成功处理 {len(results)} 条数据！")
-                st.dataframe(pd.DataFrame(results), use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # ------------------------------------------------------------------------
-    # 功能 2: 批量自定义内容 (Mode B)
-    # ------------------------------------------------------------------------
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("✍️ Mode B: Batch Custom Content")
-    
-    b_col1, b_col2 = st.columns(2)
-    with b_col1:
-        b_mid = st.text_input("TG ID", value="max_bkio", key="b_mid")
-        b_mname = st.text_input("Manager Name", value="Max", key="b_mname")
-    with b_col2:
-        b_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'], key="b_file")
-
-    st.markdown("**What the CUSTOMER will say when clicking:**")
-    custom_en = st.text_area("English Message", value="Hi {m_name}, I'm {username}. I have a question!")
-    custom_jp = st.text_area("Japanese Message", value="こんにちは {m_name}、{username} です。質問があります！")
-
-    if st.button("EXECUTE CUSTOM MODE"):
-        if b_file:
-            df = pd.read_excel(b_file) if b_file.name.endswith('xlsx') else pd.read_csv(b_file)
-            user_col = next((c for c in df.columns if 'username' in c.lower()), None)
-            country_col = next((c for c in df.columns if 'country' in c.lower()), None)
-            
-            results_b = []
+        if st.button("GENERATE CAMPAIGN"):
+            results = []
             for _, row in df.iterrows():
-                user = str(row.get(user_col, "")).strip()
+                user = str(row.get(u_col, "")).strip()
                 if not user or user.lower() == 'nan': continue
                 
-                country_raw = str(row.get(country_col, "")).upper().strip() if country_col else "EN"
-                lang = "JP" if ("JP" in country_raw or "JAPAN" in country_raw) else "EN"
+                # 强化国家和语言逻辑
+                country_val = str(row.get(c_col, "")).upper().strip()
+                lang = "JP" if ("JP" in country_val or "JAPAN" in country_val) else "EN"
                 
-                raw_text = custom_jp if lang == "JP" else custom_en
-                final_msg = raw_text.replace("{username}", user).replace("{m_name}", b_mname)
-                
-                long_url = f"https://t.me/{b_mid}?text={urllib.parse.quote(final_msg)}"
+                # 1. 客户跳转后的回复
+                cust_reply = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
+                long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(cust_reply)}"
                 short_link = shorten_url(long_url)
-                results_b.append({"Username": user, "Short Link": short_link})
+                
+                # 2. 发给客户的精美宣传文案 (根据场景自动抓取)
+                outreach_msg = OUTREACH_TEMPLATES[a_scen][lang].format(user=user, short_link=short_link)
+
+                results.append({
+                    "Username": user,
+                    "Country": country_val,
+                    "Language": lang,
+                    "Message to Copy (To Client)": outreach_msg,
+                    "Short Link": short_link
+                })
             
-            st.dataframe(pd.DataFrame(results_b), use_container_width=True)
+            st.success(f"Success! Processed {len(results)} users.")
+            st.dataframe(pd.DataFrame(results), use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
