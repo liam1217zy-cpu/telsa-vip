@@ -20,6 +20,8 @@ except Exception:
 SHORTIO_API_URL = "https://api.short.io/links"
 
 # 第一个功能的固定模板
+# 第一个功能的固定模板
+# 第一个功能的固定模板
 FIXED_TEMPLATES = {
     "Option 1: New Registration": {
         "EN": "Hi {m_name}, I am {user}. Help me with my VIP status.",
@@ -28,6 +30,36 @@ FIXED_TEMPLATES = {
     "Option 2: Retention": {
         "EN": "Hi {m_name}, I am {user}. I'm back! Please sync my VIP perks.",
         "JP": "{m_name}さん、お久しぶりです。{user}です。VIP特典を同期してください。"
+    },
+    "Option 3: Weekly Challenge": {
+        "EN": (
+            "🏆 13 Apr - 20 May '26 | Weekly Exclusive Challenge\n\n"
+            "Hi {m_name}, I am {user}. I would like to apply for this challenge:\n\n"
+            "💰 [Bonus Acquisition]\n"
+            "• Bet $51,000+ → $70 Bonus\n"
+            "• Bet $101,000+ → $150 Bonus\n"
+            "✨ Wager requirement: x1 only\n\n"
+            "⚠️ [Terms and Conditions]\n"
+            "1. Bets made using promotions/bonuses are not eligible.\n"
+            "2. Cannot be combined with other promotions.\n"
+            "3. Applies to Slots and Live Casino games only.\n"
+            "4. Fast games and Originals are excluded.\n\n"
+            "*The above conditions are strictly enforced. We reserve the right to change/cancel this promotion without prior notice.*"
+        ),
+        "JP": (
+            "🏆 4月13日 - 5月20日 '26 | ウィークリー限定チャレンジ\n\n"
+            "マネージャー {m_name}様、{user} です。本イベントへの参加を希望します：\n\n"
+            "💰 【ボーナス獲得条件】\n"
+            "・$51,000以上のベット → $70ボーナス\n"
+            "・$101,000以上のベット → $150ボーナス\n"
+            "✨ 賭け条件：わずか1倍\n\n"
+            "⚠️ 【利用規約】\n"
+            "1. プロモーションやボーナスを利用したベットは対象外です。\n"
+            "2. 他のプロモーションとの併用はできません。\n"
+            "3. スロットおよびライブカジノのベットのみ適用されます。\n"
+            "4. ファストゲームおよびオリジナルゲームは含まれません。\n\n"
+            "※上記の条件は厳格に適用されます。当社は事前の通知なしに本規約を変更、停止、終了する権利を留保します。"
+        )
     }
 }
 
