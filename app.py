@@ -117,9 +117,28 @@ def main():
         a_mid = st.text_input("TG ID", value="max_bkio")
         a_mname = st.text_input("Manager Name", value="Max")
     with a_col2:
-        a_scen = st.selectbox("Scenario", list(FIXED_TEMPLATES.keys()))
+        # 在下拉菜单里加上 "Custom: Write Your Own" 选项
+        scen_options = list(FIXED_TEMPLATES.keys()) + ["Custom: Write Your Own"]
+        a_scen = st.selectbox("Scenario", scen_options)
     with a_col3:
         a_file = st.file_uploader("Upload Excel/CSV", type=['xlsx', 'csv'])
+
+    # 🌟 如果选了自定义内容，动态显示输入框
+    custom_outreach = {"EN": "", "JP": ""}
+    custom_reply = {"EN": "", "JP": ""}
+    
+    if a_scen == "Custom: Write Your Own":
+        st.markdown("---")
+        st.markdown("### ✍️ Edit Custom Templates")
+        st.caption("Available variables: `{user}` , `{m_name}` , `{short_link}` (Only for outreach)")
+        
+        c_tab1, c_tab2 = st.tabs(["🇺🇸 English Template", "🇯🇵 Japanese Template"])
+        with c_tab1:
+            custom_outreach["EN"] = st.text_area("Outreach Message (EN)", value="Hello {user}, this is your custom offer!\n\nApply here: {short_link}", height=120)
+            custom_reply["EN"] = st.text_input("Client Auto-Reply (EN)", value="Hi {m_name}, I am {user}. I want to claim the custom offer.")
+        with c_tab2:
+            custom_outreach["JP"] = st.text_area("Outreach Message (JP)", value="{user}様、こちらはカスタム特典のご案内です！\n\n申請はこちら: {short_link}", height=120)
+            custom_reply["JP"] = st.text_input("Client Auto-Reply (JP)", value="こんにちは {m_name}、{user} です。カスタム特典を申請します。")
 
     if a_file:
         df = pd.read_excel(a_file) if a_file.name.endswith('xlsx') else pd.read_csv(a_file)
@@ -142,13 +161,21 @@ def main():
                 country_val = str(row.get(c_col, "")).upper().strip()
                 lang = "JP" if ("JP" in country_val or "JAPAN" in country_val) else "EN"
                 
+                # 判断并抓取对应的文案数据
+                if a_scen == "Custom: Write Your Own":
+                    raw_reply = custom_reply[lang]
+                    raw_outreach = custom_outreach[lang]
+                else:
+                    raw_reply = FIXED_TEMPLATES[a_scen][lang]
+                    raw_outreach = OUTREACH_TEMPLATES[a_scen][lang]
+
                 # 1. 客户跳转后的回复
-                cust_reply = FIXED_TEMPLATES[a_scen][lang].format(m_name=a_mname, user=user)
+                cust_reply = raw_reply.format(m_name=a_mname, user=user)
                 long_url = f"https://t.me/{a_mid}?text={urllib.parse.quote(cust_reply)}"
                 short_link = shorten_url(long_url)
                 
-                # 2. 发给客户的精美宣传文案 (根据场景自动抓取)
-                outreach_msg = OUTREACH_TEMPLATES[a_scen][lang].format(user=user, short_link=short_link)
+                # 2. 发给客户的精美宣传文案
+                outreach_msg = raw_outreach.format(user=user, short_link=short_link)
 
                 results.append({
                     "Username": user,
