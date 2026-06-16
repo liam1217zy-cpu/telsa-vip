@@ -101,7 +101,7 @@ def main():
     st.set_page_config(page_title="RX-0 VIP PRO", layout="wide")
     inject_ui()
     if 'auth' not in st.session_state: st.session_state.auth = False
-    st.markdown('<h1 class="main-title">VIP RX-0 [DUAL-CORE]</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">VIP shortlink generator</h1>', unsafe_allow_html=True)
 
     if not st.session_state.auth:
         pwd = st.text_input("System Key", type="password")
